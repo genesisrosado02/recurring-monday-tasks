@@ -2,9 +2,11 @@ const express = require('express');
 const bodyParser = require('body-parser');
 const axios = require('axios'); 
 const app = express();
+
+// Use JSON body parser to handle monday.com payloads
 app.use(bodyParser.json());
 
-// 1. THE DROPDOWN LIST (For Monday's UI)
+// 1. DROPDOWN OPTIONS: Monday calls these to fill your menus
 app.post('/get-day-options', (req, res) => {
     res.status(200).send([
         { label: "Monday", value: 1 },
@@ -26,38 +28,38 @@ app.post('/get-nth-options', (req, res) => {
     ]);
 });
 
-// 2. THE MAIN MATH & CREATION LOGIC
+// 2. THE MAIN ACTION: Calculates date and creates the task
 app.post('/calculate-task', async (req, res) => {
     try {
-        // 1. ADD THIS CHECK: 
-        // If it's just Monday asking for fields/options, ignore the math and send 200 OK.
-        if (!req.body.payload || !req.body.payload.inPublic || !req.body.payload.inPublic.inputFields) {
-            return res.status(200).send({}); 
+        const { payload } = req.body;
+
+        // --- SAFETY SHIELD ---
+        // If Monday is just "checking" the connection and hasn't sent data yet, stop here.
+        if (!payload || !payload.inPublic || !payload.inPublic.inputFields) {
+            console.log("Received a 'Check-In' request from Monday. Sending success...");
+            return res.status(200).send({});
         }
 
-        // 2. THE NORMAL LOGIC (Only runs when inputFields exists)
-        const { payload } = req.body;
+        // --- THE ACTUAL LOGIC ---
         const { boardId, task_name, nth_occurrence, day_of_week, item_mapping } = payload.inPublic.inputFields;
 
-        // ... rest of your math and creation code ...
-        // (Ensure the code you have below this is the one from the "Pro" update)
-        
-        res.status(200).send({});
-    } catch (err) {
-        console.error("Error Detail:", err.message); // This will show more detail in Render logs
-        res.status(500).send({ error: "Failed to calculate task" });
-    }
-});
-        // MATH
+        // Date Calculation Math
         const now = new Date();
         let d = new Date(now.getFullYear(), now.getMonth(), 1);
-        while (d.getDay() !== parseInt(day_of_week)) { d.setDate(d.getDate() + 1); }
+        while (d.getDay() !== parseInt(day_of_week)) { 
+            d.setDate(d.getDate() + 1); 
+        }
         d.setDate(d.getDate() + (parseInt(nth_occurrence) - 1) * 7);
         const formattedDate = d.toISOString().split('T')[0];
 
-        // ADD DATE TO MAPPING
+        // Prepare the Column Values (Including Person/Status/Group mapping)
         const columnValues = item_mapping || {};
-        columnValues[process.env.DUE_DATE_COLUMN_ID] = { "date": formattedDate };
+        
+        // Add the calculated date to the mapping
+        // IMPORTANT: Make sure DUE_DATE_COLUMN_ID is set in your Render Env Variables!
+        if (process.env.DUE_DATE_COLUMN_ID) {
+            columnValues[process.env.DUE_DATE_COLUMN_ID] = { "date": formattedDate };
+        }
 
         const query = `mutation {
             create_item (
@@ -67,15 +69,21 @@ app.post('/calculate-task', async (req, res) => {
             ) { id }
         }`;
 
+        console.log("Creating item with values:", columnValues);
+
         await axios.post('https://api.monday.com/v2', { query }, {
-            headers: { 'Authorization': process.env.MONDAY_API_TOKEN, 'Content-Type': 'application/json' }
+            headers: { 
+                'Authorization': process.env.MONDAY_API_TOKEN, 
+                'Content-Type': 'application/json' 
+            }
         });
 
         res.status(200).send({});
     } catch (err) {
-        console.error(err);
-        res.status(500).send({ error: "Failed" });
+        console.error("CRITICAL ERROR:", err.message);
+        res.status(500).send({ error: "Server error during task calculation" });
     }
 });
 
-app.listen(process.env.PORT || 3000);
+const PORT = process.env.PORT || 3000;
+app.listen(PORT, () => console.log(`Server running on port ${PORT}`));
