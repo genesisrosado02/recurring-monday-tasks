@@ -1,7 +1,7 @@
 {
-  "name": "monday-nth-day-scheduler",
+  "name": "recurring-monday-tasks",
   "version": "1.0.0",
-  "description": "Custom action to schedule tasks for the Nth day of the week.",
+  "description": "Calculates nth day of the month",
   "main": "server.js",
   "scripts": {
     "start": "node server.js"
