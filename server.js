@@ -29,9 +29,25 @@ app.post('/get-nth-options', (req, res) => {
 // 2. THE MAIN MATH & CREATION LOGIC
 app.post('/calculate-task', async (req, res) => {
     try {
+        // 1. ADD THIS CHECK: 
+        // If it's just Monday asking for fields/options, ignore the math and send 200 OK.
+        if (!req.body.payload || !req.body.payload.inPublic || !req.body.payload.inPublic.inputFields) {
+            return res.status(200).send({}); 
+        }
+
+        // 2. THE NORMAL LOGIC (Only runs when inputFields exists)
         const { payload } = req.body;
         const { boardId, task_name, nth_occurrence, day_of_week, item_mapping } = payload.inPublic.inputFields;
 
+        // ... rest of your math and creation code ...
+        // (Ensure the code you have below this is the one from the "Pro" update)
+        
+        res.status(200).send({});
+    } catch (err) {
+        console.error("Error Detail:", err.message); // This will show more detail in Render logs
+        res.status(500).send({ error: "Failed to calculate task" });
+    }
+});
         // MATH
         const now = new Date();
         let d = new Date(now.getFullYear(), now.getMonth(), 1);
