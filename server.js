@@ -23,11 +23,14 @@ app.all('/get-nth-options', (req, res) => {
 });
 
 app.all('/get-day-options', (req, res) => {
-    console.log("--> Day options requested");
+console.log("--> Day options requested");
     const options = [
-        { title: "Monday", value: "1" }, { title: "Tuesday", value: "2" },
-        { title: "Wednesday", value: "3" }, { label: "Thursday", value: "4" },
-        { title: "Friday", value: "5" }, { title: "Saturday", value: "6" },
+        { title: "Monday", value: "1" }, 
+        { title: "Tuesday", value: "2" },
+        { title: "Wednesday", value: "3" }, 
+        { title: "Thursday", value: "4" }, // Fixed: changed 'label' to 'title'
+        { title: "Friday", value: "5" }, 
+        { title: "Saturday", value: "6" },
         { title: "Sunday", value: "0" }
     ];
     return res.status(200).json(options);
