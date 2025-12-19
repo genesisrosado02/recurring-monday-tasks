@@ -1,13 +1,13 @@
-_const express = require('express');
+const express = require('express');
 const bodyParser = require('body-parser');
 const axios = require('axios');
 const app = express();
 
 app.use(bodyParser.json());
 
-// --- 🔒 SAFE SETTINGS (Using Environment Variables) ---
+// --- 🔒 SAFE SETTINGS (Matched to your Render Keys) ---
 const MONDAY_API_TOKEN = process.env.MONDAY_API_TOKEN; 
-const DATE_COLUMN_ID = process.env.DATE_COLUMN_ID; 
+const DUE_DATE_COLUMN_ID = process.env.DUE_DATE_COLUMN_ID; // 👈 This now matches your Render Key
 
 // --- 1. REMOTE OPTIONS ---
 app.all('/get-nth-options', (req, res) => {
@@ -50,11 +50,15 @@ app.post('/calculate-task', async (req, res) => {
         d.setDate(d.getDate() + (parseInt(nth) - 1) * 7);
         const formattedDate = d.toISOString().split('T')[0];
 
-        // Column values
-        const columnValues = {
-            [DATE_COLUMN_ID]: { "date": formattedDate },
-            "person": { "personsAndTeams": [{ "id": parseInt(assignee_id), "kind": "person" }] }
+        // --- PREPARE COLUMN VALUES ---
+        const columnValues = {};
+        // Use the variable that matches your Render Environment
+        columnValues[DUE_DATE_COLUMN_ID] = { "date": formattedDate };
+        columnValues["person"] = { 
+            "personsAndTeams": [{ "id": parseInt(assignee_id), "kind": "person" }] 
         };
+
+        console.log(`Creating item on board ${boardId} with Date Column: ${DUE_DATE_COLUMN_ID}`);
 
         const query = `mutation {
             create_item (
@@ -64,13 +68,19 @@ app.post('/calculate-task', async (req, res) => {
             ) { id }
         }`;
 
-        await axios.post('https://api.monday.com/v2', { query }, {
+        const response = await axios.post('https://api.monday.com/v2', { query }, {
             headers: { 
                 'Authorization': MONDAY_API_TOKEN, 
                 'Content-Type': 'application/json',
                 'API-Version': '2024-01' 
             }
         });
+
+        if (response.data.errors) {
+            console.error("❌ MONDAY ERROR:", JSON.stringify(response.data.errors));
+        } else {
+            console.log("✅ SUCCESS! Task created with date.");
+        }
 
         res.status(200).send({});
     } catch (err) {
