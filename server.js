@@ -5,11 +5,11 @@ const app = express();
 
 app.use(bodyParser.json());
 
-// --- 🛠️ SETTINGS (HARDCODED FOR SUCCESS) ---
-const MONDAY_API_TOKEN = "YOUR_ACTUAL_API_TOKEN_HERE"; // 👈 Paste your token inside the quotes
+// --- 🛠️ SETTINGS (HARDCODED FOR STABILITY) ---
+const MONDAY_API_TOKEN = "YOUR_ACTUAL_API_TOKEN_HERE"; // 👈 PASTE YOUR TOKEN HERE
 const DATE_COLUMN_ID = "date_mkyj80vp"; 
 
-// --- 1. REMOTE OPTIONS (Corrected to 'title') ---
+// --- 1. REMOTE OPTIONS (Using 'title' per Monday requirements) ---
 
 app.all('/get-nth-options', (req, res) => {
     console.log("--> Nth options requested");
@@ -36,19 +36,25 @@ app.all('/get-day-options', (req, res) => {
     return res.status(200).json(options);
 });
 
-// --- 2. MAIN ACTION (Create New Task) ---
+// --- 2. MAIN ACTION (The Task Creator) ---
 
 app.post('/calculate-task', async (req, res) => {
     try {
         console.log("--> Action triggered! Incoming payload...");
-        const { payload } = req.body;
         
-        if (!payload || !payload.inPublic || !payload.inPublic.inputFields) {
-            console.log("Empty or malformed payload received.");
-            return res.status(200).send({});
+        // This helps us see the raw data in Render if it fails again
+        console.log("Full Payload Received:", JSON.stringify(req.body));
+
+        // FLEXIBLE PAYLOAD CHECK: Monday sends data differently via buttons vs schedules
+        const payload = req.body.payload || req.body; 
+        const inputFields = (payload.inPublic && payload.inPublic.inputFields) || payload.inputFields;
+
+        if (!inputFields) {
+            console.error("❌ ERROR: inputFields is missing. Check Action mapping in Monday.");
+            return res.status(200).send({ error: "Missing fields" });
         }
 
-        const { boardId, task_name, assignee_id, nth_occurrence, day_of_week } = payload.inPublic.inputFields;
+        const { boardId, task_name, assignee_id, nth_occurrence, day_of_week } = inputFields;
 
         // Date Calculation Logic
         const now = new Date();
@@ -59,7 +65,7 @@ app.post('/calculate-task', async (req, res) => {
         d.setDate(d.getDate() + (parseInt(nth_occurrence) - 1) * 7);
         const formattedDate = d.toISOString().split('T')[0];
 
-        // ⚠️ PERSON COLUMN SYNTAX: Monday requires 'personsAndTeams' for People columns
+        // Column values: Using the 'personsAndTeams' format for People columns
         const columnValues = {
             [DATE_COLUMN_ID]: { "date": formattedDate },
             "person": { "personsAndTeams": [{ "id": parseInt(assignee_id), "kind": "person" }] }
@@ -73,8 +79,6 @@ app.post('/calculate-task', async (req, res) => {
             ) { id }
         }`;
 
-        console.log("Sending mutation to Monday...");
-
         const response = await axios.post('https://api.monday.com/v2', { query }, {
             headers: { 
                 'Authorization': MONDAY_API_TOKEN, 
@@ -83,7 +87,7 @@ app.post('/calculate-task', async (req, res) => {
             }
         });
 
-        // Detailed Logging to catch the "Silent Success"
+        // Debugging the response from Monday
         if (response.data.errors) {
             console.error("❌ MONDAY API REJECTED REQUEST:", JSON.stringify(response.data.errors));
         } else if (response.data.data && response.data.data.create_item) {
@@ -98,6 +102,8 @@ app.post('/calculate-task', async (req, res) => {
         res.status(500).send({ error: "Internal server error" });
     }
 });
+
+// --- 3. SERVER BOOTUP ---
 
 const PORT = process.env.PORT || 10000;
 app.listen(PORT, '0.0.0.0', () => {
