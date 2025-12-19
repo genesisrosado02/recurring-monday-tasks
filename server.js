@@ -8,25 +8,37 @@ app.use(bodyParser.json());
 // --- 1. DROPDOWN OPTIONS (Using .all for browser & monday compatibility) ---
 
 // Populates the "1st, 2nd, 3rd..." dropdown
+// Populates the "1st, 2nd, 3rd..." dropdown
 app.all('/get-nth-options', (req, res) => {
-    const options = [
-        { label: "1st", value: "1" },
-        { label: "2nd", value: "2" },
-        { label: "3rd", value: "3" },
-        { label: "4th", value: "4" }
-    ];
-    res.status(200).json(options);
+    try {
+        const options = [
+            { label: "1st", value: "1" },
+            { label: "2nd", value: "2" },
+            { label: "3rd", value: "3" },
+            { label: "4th", value: "4" }
+        ];
+        // Send as a clear JSON array, which Monday expects
+        return res.status(200).json(options);
+    } catch (err) {
+        console.error("Dropdown Error:", err);
+        return res.status(500).json({ error: "Internal server error" });
+    }
 });
 
 // Populates the "Monday, Tuesday..." dropdown
 app.all('/get-day-options', (req, res) => {
-    const options = [
-        { label: "Monday", value: "1" }, { label: "Tuesday", value: "2" },
-        { label: "Wednesday", value: "3" }, { label: "Thursday", value: "4" },
-        { label: "Friday", value: "5" }, { label: "Saturday", value: "6" },
-        { label: "Sunday", value: "0" }
-    ];
-    res.status(200).json(options);
+    try {
+        const options = [
+            { label: "Monday", value: "1" }, { label: "Tuesday", value: "2" },
+            { label: "Wednesday", value: "3" }, { label: "Thursday", value: "4" },
+            { label: "Friday", value: "5" }, { label: "Saturday", value: "6" },
+            { label: "Sunday", value: "0" }
+        ];
+        return res.status(200).json(options);
+    } catch (err) {
+        console.error("Dropdown Error:", err);
+        return res.status(500).json({ error: "Internal server error" });
+    }
 });
 
 // --- 2. THE MAIN ACTION: CREATE, ASSIGN, AND DATE ---
