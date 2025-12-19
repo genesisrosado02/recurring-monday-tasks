@@ -5,11 +5,14 @@ const app = express();
 
 app.use(bodyParser.json());
 
-// --- 1. REMOTE OPTIONS (Updated to use "title" per docs) ---
+// --- SETTINGS ---
+const MONDAY_API_TOKEN = "YOUR_ACTUAL_API_TOKEN_HERE"; 
+const DATE_COLUMN_ID = "date_mkyj80vp"; 
+
+// --- 1. REMOTE OPTIONS ---
 
 app.all('/get-nth-options', (req, res) => {
     console.log("--> Nth options requested");
-    // Monday requires exactly: { title: "string", value: "string" }
     const options = [
         { title: "1st", value: "1" },
         { title: "2nd", value: "2" },
@@ -23,7 +26,7 @@ app.all('/get-day-options', (req, res) => {
     console.log("--> Day options requested");
     const options = [
         { title: "Monday", value: "1" }, { title: "Tuesday", value: "2" },
-        { title: "Wednesday", value: "3" }, { title: "Thursday", value: "4" },
+        { title: "Wednesday", value: "3" }, { label: "Thursday", value: "4" },
         { title: "Friday", value: "5" }, { title: "Saturday", value: "6" },
         { title: "Sunday", value: "0" }
     ];
@@ -34,14 +37,16 @@ app.all('/get-day-options', (req, res) => {
 
 app.post('/calculate-task', async (req, res) => {
     try {
+        console.log("--> Action triggered! Processing...");
         const { payload } = req.body;
+        
         if (!payload || !payload.inPublic || !payload.inPublic.inputFields) {
             return res.status(200).send({});
         }
 
         const { boardId, task_name, assignee_id, nth_occurrence, day_of_week } = payload.inPublic.inputFields;
 
-        // Date logic
+        // Date Calculation
         const now = new Date();
         let d = new Date(now.getFullYear(), now.getMonth(), 1);
         while (d.getDay() !== parseInt(day_of_week)) {
@@ -50,9 +55,9 @@ app.post('/calculate-task', async (req, res) => {
         d.setDate(d.getDate() + (parseInt(nth_occurrence) - 1) * 7);
         const formattedDate = d.toISOString().split('T')[0];
 
-        // Column values
+        // Column values - Hardcoded IDs to prevent errors
         const columnValues = {
-            [process.env.DUE_DATE_COLUMN_ID]: { "date": formattedDate },
+            [DATE_COLUMN_ID]: { "date": formattedDate },
             "person": { "id": assignee_id }
         };
 
@@ -64,22 +69,27 @@ app.post('/calculate-task', async (req, res) => {
             ) { id }
         }`;
 
-        await axios.post('https://api.monday.com/v2', { query }, {
+        const response = await axios.post('https://api.monday.com/v2', { query }, {
             headers: { 
-                'Authorization': process.env.MONDAY_API_TOKEN, 
+                'Authorization': MONDAY_API_TOKEN, 
                 'Content-Type': 'application/json' 
             }
         });
 
+        if (response.data.errors) {
+            console.error("MONDAY API ERROR:", response.data.errors);
+        } else {
+            console.log("--> SUCCESS! Task created.");
+        }
+
         res.status(200).send({});
     } catch (err) {
-        console.error("CRITICAL ERROR:", err.message);
-        res.status(500).send({ error: "Creation failed" });
+        console.error("SERVER ERROR:", err.message);
+        res.status(500).send({ error: "Internal server error" });
     }
 });
 
-// --- 3. PORT SETUP ---
 const PORT = process.env.PORT || 10000;
 app.listen(PORT, '0.0.0.0', () => {
-    console.log(`Server live on port ${PORT}`);
+    console.log(`Server listening on port ${PORT}`);
 });
