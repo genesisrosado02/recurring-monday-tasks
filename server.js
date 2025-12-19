@@ -5,55 +5,43 @@ const app = express();
 
 app.use(bodyParser.json());
 
-// --- 1. REMOTE OPTIONS HANDLERS ---
+// --- 1. REMOTE OPTIONS (Updated to use "title" per docs) ---
 
 app.all('/get-nth-options', (req, res) => {
-    console.log("--> Nth options requested by Monday");
-    try {
-        // Monday expects a 200 status and a JSON array of label/value objects
-        const options = [
-            { label: "1st", value: "1" },
-            { label: "2nd", value: "2" },
-            { label: "3rd", value: "3" },
-            { label: "4th", value: "4" }
-        ];
-        return res.status(200).json(options);
-    } catch (err) {
-        console.error("Dropdown Error:", err.message);
-        return res.status(500).json({ error: "Failed to generate options" });
-    }
+    console.log("--> Nth options requested");
+    // Monday requires exactly: { title: "string", value: "string" }
+    const options = [
+        { title: "1st", value: "1" },
+        { title: "2nd", value: "2" },
+        { title: "3rd", value: "3" },
+        { title: "4th", value: "4" }
+    ];
+    return res.status(200).json(options);
 });
 
 app.all('/get-day-options', (req, res) => {
-    console.log("--> Day options requested by Monday");
-    try {
-        const options = [
-            { label: "Monday", value: "1" }, { label: "Tuesday", value: "2" },
-            { label: "Wednesday", value: "3" }, { label: "Thursday", value: "4" },
-            { label: "Friday", value: "5" }, { label: "Saturday", value: "6" },
-            { label: "Sunday", value: "0" }
-        ];
-        return res.status(200).json(options);
-    } catch (err) {
-        console.error("Dropdown Error:", err.message);
-        return res.status(500).json({ error: "Failed to generate options" });
-    }
+    console.log("--> Day options requested");
+    const options = [
+        { title: "Monday", value: "1" }, { title: "Tuesday", value: "2" },
+        { title: "Wednesday", value: "3" }, { title: "Thursday", value: "4" },
+        { title: "Friday", value: "5" }, { title: "Saturday", value: "6" },
+        { title: "Sunday", value: "0" }
+    ];
+    return res.status(200).json(options);
 });
 
 // --- 2. MAIN CALCULATION ACTION ---
 
 app.post('/calculate-task', async (req, res) => {
     try {
-        console.log("--> Action triggered! Processing task creation...");
         const { payload } = req.body;
-        
         if (!payload || !payload.inPublic || !payload.inPublic.inputFields) {
             return res.status(200).send({});
         }
 
         const { boardId, task_name, assignee_id, nth_occurrence, day_of_week } = payload.inPublic.inputFields;
 
-        // Date logic: Find the Nth [Day] of current month
+        // Date logic
         const now = new Date();
         let d = new Date(now.getFullYear(), now.getMonth(), 1);
         while (d.getDay() !== parseInt(day_of_week)) {
@@ -62,7 +50,7 @@ app.post('/calculate-task', async (req, res) => {
         d.setDate(d.getDate() + (parseInt(nth_occurrence) - 1) * 7);
         const formattedDate = d.toISOString().split('T')[0];
 
-        // Column values (using your 'person' ID)
+        // Column values
         const columnValues = {
             [process.env.DUE_DATE_COLUMN_ID]: { "date": formattedDate },
             "person": { "id": assignee_id }
@@ -83,7 +71,6 @@ app.post('/calculate-task', async (req, res) => {
             }
         });
 
-        console.log("--> Success: Task created with date", formattedDate);
         res.status(200).send({});
     } catch (err) {
         console.error("CRITICAL ERROR:", err.message);
@@ -92,8 +79,7 @@ app.post('/calculate-task', async (req, res) => {
 });
 
 // --- 3. PORT SETUP ---
-
 const PORT = process.env.PORT || 10000;
 app.listen(PORT, '0.0.0.0', () => {
-    console.log(`Server live and listening on port ${PORT}`);
+    console.log(`Server live on port ${PORT}`);
 });
