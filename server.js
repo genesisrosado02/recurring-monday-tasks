@@ -5,7 +5,7 @@ const app = express();
 
 app.use(bodyParser.json());
 
-// 1. DROPDOWN OPTIONS (Populates Nth and Day of Week menus)
+// 1. Dropdown Menus for the Recipe
 app.post('/get-day-options', (req, res) => {
     res.status(200).send([
         { label: "Monday", value: 1 }, { label: "Tuesday", value: 2 },
@@ -22,25 +22,17 @@ app.post('/get-nth-options', (req, res) => {
     ]);
 });
 
-// 2. THE HANDSHAKE (This makes the blue circle menu appear)
-app.post('/item_mapping', (req, res) => {
-    // This tells monday.com the server is ready to receive mapping data
-    res.status(200).send({}); 
-});
-
-// 3. THE MAIN ACTION (Creates the task on the calculated date)
+// 2. The Main Action: Create, Assign, and Date
 app.post('/calculate-task', async (req, res) => {
     try {
         const { payload } = req.body;
-
-        // Safety check to prevent crashes during Monday's initial "pings"
         if (!payload || !payload.inPublic || !payload.inPublic.inputFields) {
             return res.status(200).send({});
         }
 
-        const { boardId, nth_occurrence, day_of_week, item_mapping } = payload.inPublic.inputFields;
+        const { boardId, task_name, assignee_id, nth_occurrence, day_of_week } = payload.inPublic.inputFields;
 
-        // Logic to calculate the Nth day of the month
+        // Date Calculation Logic
         const now = new Date();
         let d = new Date(now.getFullYear(), now.getMonth(), 1);
         while (d.getDay() !== parseInt(day_of_week)) { 
@@ -49,19 +41,16 @@ app.post('/calculate-task', async (req, res) => {
         d.setDate(d.getDate() + (parseInt(nth_occurrence) - 1) * 7);
         const formattedDate = d.toISOString().split('T')[0];
 
-        // Pulling data from the Item Mapping field
-        const columnValues = item_mapping || {};
-        const itemName = columnValues.name || "Recurring Task";
-
-        // If you have a Due Date column ID set in Render Environment Variables
-        if (process.env.DUE_DATE_COLUMN_ID) {
-            columnValues[process.env.DUE_DATE_COLUMN_ID] = { "date": formattedDate };
-        }
+        // Building the Column Values (Using your ID: person)
+        const columnValues = {
+            [process.env.DUE_DATE_COLUMN_ID]: { "date": formattedDate },
+            "person": { "id": assignee_id } 
+        };
 
         const query = `mutation {
             create_item (
                 board_id: ${boardId},
-                item_name: "${itemName}",
+                item_name: "${task_name || 'Recurring Task'}", 
                 column_values: ${JSON.stringify(JSON.stringify(columnValues))}
             ) { id }
         }`;
@@ -76,7 +65,7 @@ app.post('/calculate-task', async (req, res) => {
         res.status(200).send({});
     } catch (err) {
         console.error("ERROR:", err.message);
-        res.status(500).send({ error: "Server Error" });
+        res.status(500).send({ error: "Creation failed" });
     }
 });
 
