@@ -69,5 +69,7 @@ app.post('/calculate-task', async (req, res) => {
     }
 });
 
-const PORT = process.env.PORT || 3000;
-app.listen(PORT, () => console.log(`Server live on port ${PORT}`));
+const PORT = process.env.PORT || 10000; // Updated to match Render's detection
+app.listen(PORT, '0.0.0.0', () => {
+    console.log(`Server is strictly listening on port ${PORT}`);
+});
