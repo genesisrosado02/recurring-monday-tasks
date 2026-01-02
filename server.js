@@ -15,7 +15,7 @@ app.post('/get-status-field-defs', (req, res) => {
         type: "status-column-value",
         outboundType: "status-column-value",
         contextualParameters: {
-            columnId: "columnID" // MUST match your Status Column Picker key exactly
+            columnId: "columnId" // MUST match your Status Column Picker key exactly
         }
     });
 });
@@ -39,7 +39,7 @@ app.post('/calculate-task-with-status', async (req, res) => {
         const inputFields = payload.inboundFieldValues || (payload.inPublic && payload.inPublic.inputFields);
         if (!inputFields) return res.status(200).send({});
 
-        const { boardId, task_name, assignee_id, columnID, status_value } = inputFields;
+        const { boardId, task_name, assignee_id, columnId, status_value } = inputFields;
         const labelText = status_value?.label || status_value?.value || status_value;
         
         const nth = inputFields.nth_occurence?.value || inputFields.nth_occurence;
@@ -55,7 +55,7 @@ app.post('/calculate-task-with-status', async (req, res) => {
         const columnValues = {
             [DUE_DATE_COLUMN_ID]: { "date": date },
             "person": { "personsAndTeams": [{ "id": parseInt(assignee_id), "kind": "person" }] },
-            [columnID]: { "label": labelText } 
+            [columnId]: { "label": labelText } 
         };
 
         const query = `mutation { 
