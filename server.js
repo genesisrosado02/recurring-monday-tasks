@@ -6,27 +6,22 @@ const app = express();
 app.use(bodyParser.json());
 
 // --- 🛠️ THE UNIVERSAL STATUS HANDLER ---
-// Use this for BOTH "Field Definitions" and "Remote Options"
+// Set BOTH Field Definitions and Remote Options URLs to this endpoint
 app.all('/status-logic', async (req, res) => {
     const payload = req.body.payload || req.body;
     
-    // Check for incoming board/column data from the recipe
+    // Check if Monday is sending board/column data (The 'Fetch' phase)
     const { boardId, columnId } = payload.inputFields || payload;
 
     if (boardId && columnId) {
         try {
-            console.log(`📡 Fetching labels for Board: ${boardId}, Column: ${columnId}`);
-            
-            // Querying the board to get the specific column settings
+            console.log(`📡 Fetching live labels for Board: ${boardId}, Col: ${columnId}`);
             const query = `query { boards (ids: ${boardId}) { columns (ids: "${columnId}") { settings_str } } }`;
             const response = await axios.post('https://api.monday.com/v2', { query }, {
-                headers: { 
-                    'Authorization': process.env.MONDAY_API_TOKEN, 
-                    'API-Version': '2024-01' 
-                }
+                headers: { 'Authorization': process.env.MONDAY_API_TOKEN, 'API-Version': '2024-01' }
             });
 
-            // Parsing labels directly from the column settings
+            // Grabbing actual labels from your column settings
             const settings = JSON.parse(response.data.data.boards[0].columns[0].settings_str);
             const options = Object.entries(settings.labels).map(([id, label]) => ({ 
                 title: label, 
@@ -35,33 +30,34 @@ app.all('/status-logic', async (req, res) => {
 
             return res.status(200).json(options);
         } catch (e) { 
-            console.error("❌ API Fetch Error:", e.message);
+            console.error("❌ API Error:", e.message);
             return res.status(200).json([]); 
         }
     }
 
-    // HANDSHAKE: Tells the Monday UI that this field depends on columnId
-    console.log("🟦 Sending Field Definition Handshake");
+    // HANDSHAKE: Tells Monday's UI how to behave
+    // MUST match the Key 'status_value' in your Developer Center
+    console.log("🟦 Sending Handshake for status_value");
     return res.status(200).json({
-        id: "status_value",
+        id: "status_value", 
         title: "Status Column Value",
         outboundType: "status-column-value",
         inboundTypes: ["status-column-value"],
-        contextualParameters: { columnId: "columnId" } // Links to your first field
+        contextualParameters: { columnId: "columnId" } // Links to your column selector key
     });
 });
 
-// --- 🚀 THE RECURRING TASK ACTION ---
+// --- 🚀 THE ACTION (CREATING THE ITEM) ---
 app.post('/calculate-task-with-status', async (req, res) => {
     try {
         const payload = req.body.payload || req.body;
         const inputFields = payload.inboundFieldValues || payload.inputFields;
         
-        // Extract values using the status_value key
+        // Match the keys in your recipe sentence
         const { boardId, columnId, status_value, task_name, assignee_id } = inputFields;
         const statusIndex = status_value?.value || status_value;
 
-        // Date Calculation Logic
+        // Recurring Date Logic
         const { nth_occurence, day_of_week } = inputFields;
         const now = new Date();
         let d = new Date(now.getFullYear(), now.getMonth(), 1);
@@ -71,43 +67,22 @@ app.post('/calculate-task-with-status', async (req, res) => {
         const columnValues = {
             [process.env.DUE_DATE_COLUMN_ID]: { "date": d.toISOString().split('T')[0] },
             "person": { "personsAndTeams": [{ "id": parseInt(assignee_id), "kind": "person" }] },
-            [columnId]: { "index": parseInt(statusIndex) } // Setting the status by Index
+            [columnId]: { "index": parseInt(statusIndex) } // Setting the status
         };
 
-        const query = `mutation { 
-            create_item (
-                board_id: ${parseInt(boardId)}, 
-                item_name: "${task_name}", 
-                column_values: ${JSON.stringify(JSON.stringify(columnValues))}
-            ) { id } 
-        }`;
-
+        const query = `mutation { create_item (board_id: ${parseInt(boardId)}, item_name: "${task_name}", column_values: ${JSON.stringify(JSON.stringify(columnValues))}) { id } }`;
         await axios.post('https://api.monday.com/v2', { query }, { 
-            headers: { 
-                'Authorization': process.env.MONDAY_API_TOKEN, 
-                'Content-Type': 'application/json', 
-                'API-Version': '2024-01' 
-            } 
+            headers: { 'Authorization': process.env.MONDAY_API_TOKEN, 'Content-Type': 'application/json', 'API-Version': '2024-01' } 
         });
-
-        console.log("✅ Success: Item created with status.");
         res.status(200).send({});
     } catch (err) {
-        console.error("❌ Action Error:", err.message);
+        console.error("❌ Action failed:", err.message);
         res.status(200).send({});
     }
 });
 
-// Static Helpers for Nth and Day selections
-app.all('/get-nth-options', (req, res) => res.json([
-    {title:"1st",value:"1"},{title:"2nd",value:"2"},{title:"3rd",value:"3"},{title:"4th",value:"4"}
-]));
+// Static Helpers
+app.all('/get-nth-options', (req, res) => res.json([{title:"1st",value:"1"},{title:"2nd",value:"2"},{title:"3rd",value:"3"},{title:"4th",value:"4"}]));
+app.all('/get-day-options', (req, res) => res.json([{title:"Monday",value:"1"},{title:"Tuesday",value:"2"},{title:"Wednesday",value:"3"},{title:"Thursday",value:"4"},{title:"Friday",value:"5"},{title:"Saturday",value:"6"},{title:"Sunday",value:"0"}]));
 
-app.all('/get-day-options', (req, res) => res.json([
-    {title:"Monday",value:"1"},{title:"Tuesday",value:"2"},{title:"Wednesday",value:"3"},
-    {title:"Thursday",value:"4"},{title:"Friday",value:"5"},{title:"Saturday",value:"6"},{title:"Sunday",value:"0"}
-]));
-
-// Fixed Port for Render
-const PORT = 10000;
-app.listen(PORT, '0.0.0.0', () => console.log(`Server live on port ${PORT}`));
+app.listen(10000, '0.0.0.0');
