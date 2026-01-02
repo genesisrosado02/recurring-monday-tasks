@@ -6,87 +6,74 @@ const app = express();
 app.use(bodyParser.json());
 
 // --- 🕵️ GLOBAL LOGGER ---
-// This logs EVERY hit to your server. If you don't see logs here, the request isn't reaching Render.
 app.use((req, res, next) => {
     console.log(`📡 [LOG]: ${req.method} request to: ${req.url}`);
     next();
 });
 
 // --- 1. ROOT HANDLER ---
-app.get('/', (req, res) => {
-    res.status(200).send("Server is LIVE.");
+// Prevents the blue circle if Monday pings the Base URL directly
+app.all('/', (req, res) => {
+    return res.status(200).json({
+        type: "status-column-value",
+        outboundType: "status-column-value",
+        contextualParameters: { columnId: "columnId" }
+    });
 });
 
-/**
- * 2. FIELD DEFINITION (The "Blue Circle" Killer)
- * Changed to app.all to handle any request method Monday sends.
- * Path: /get-status-field-defs (Must match image_ddebc9.png exactly).
- */
+// --- 2. FIELD DEFINITION (Handshake) ---
+// Links the 'status_value' field to your 'columnId' selection
 app.all('/get-status-field-defs', (req, res) => {
-    console.log("🟦 [HANDSHAKE]: Monday requested Status metadata for key: columnId");
+    console.log("🟦 [HANDSHAKE]: Sending metadata for columnId");
     return res.status(200).json({
         type: "status-column-value",
         outboundType: "status-column-value",
         contextualParameters: {
-            // Lowercase 'd' matches image_ddee70.png exactly
-            columnId: "columnId" 
+            columnId: "columnId" // Matches your dependency key exactly
         }
     });
 });
 
-// --- 3. OPTIONS LOADERS ---
-app.all('/get-nth-options', (req, res) => {
-    res.json([{ title: "1st", value: "1" }, { title: "2nd", value: "2" }, { title: "3rd", value: "3" }, { title: "4th", value: "4" }]);
-});
-
-app.all('/get-day-options', (req, res) => {
-    res.json([{ title: "Monday", value: "1" }, { title: "Tuesday", value: "2" }, { title: "Wednesday", value: "3" }, { title: "Thursday", value: "4" }, { title: "Friday", value: "5" }, { title: "Saturday", value: "6" }, { title: "Sunday", value: "0" }]);
-});
-
-// --- 4. MAIN ACTION HANDLER ---
-app.post('/calculate-task-with-status', async (req, res) => {
+// --- 3. REMOTE OPTIONS (The Label Fetcher) ---
+// This turns the "Search" box into a list of your actual Status labels
+app.post('/get-status-labels', async (req, res) => {
     try {
-        console.log("🚀 [ACTION]: Triggered by Monday automation.");
         const payload = req.body.payload || req.body;
-        const inputFields = payload.inboundFieldValues || (payload.inPublic && payload.inPublic.inputFields);
-        
-        if (!inputFields) return res.status(200).send({});
+        const { boardId, columnId } = payload.inputFields;
 
-        const { boardId, task_name, assignee_id, columnId, status_value } = inputFields;
-        const labelText = status_value?.label || status_value?.value || status_value;
-        const nth = inputFields.nth_occurence?.value || inputFields.nth_occurence;
-        const day = inputFields.day_of_week?.value || inputFields.day_of_week;
+        console.log(`🔍 [FETCHING]: Getting labels for Board: ${boardId}, Column: ${columnId}`);
 
-        // Date calculation logic
-        const now = new Date();
-        let d = new Date(now.getFullYear(), now.getMonth(), 1);
-        while (d.getDay() !== parseInt(day)) d.setDate(d.getDate() + 1);
-        d.setDate(d.getDate() + (parseInt(nth) - 1) * 7);
-        const date = d.toISOString().split('T')[0];
+        const query = `query {
+            boards (ids: ${boardId}) {
+                columns (ids: "${columnId}") {
+                    settings_str
+                }
+            }
+        }`;
 
-        const columnValues = {
-            [process.env.DUE_DATE_COLUMN_ID]: { "date": date },
-            "person": { "personsAndTeams": [{ "id": parseInt(assignee_id), "kind": "person" }] },
-            [columnId]: { "label": labelText } 
-        };
-
-        const query = `mutation { create_item (board_id: ${parseInt(boardId)}, item_name: "${task_name}", column_values: ${JSON.stringify(JSON.stringify(columnValues))}) { id } }`;
-        
-        await axios.post('https://api.monday.com/v2', { query }, { 
+        const response = await axios.post('https://api.monday.com/v2', { query }, {
             headers: { 
                 'Authorization': process.env.MONDAY_API_TOKEN, 
-                'Content-Type': 'application/json', 
                 'API-Version': '2024-01' 
-            } 
+            }
         });
 
-        console.log("✨ [SUCCESS]: Item created on board.");
-        res.status(200).send({});
+        const columnData = response.data.data.boards[0].columns[0];
+        const settings = JSON.parse(columnData.settings_str);
+        
+        // Maps the column labels (e.g., "Done", "Stuck") to the dropdown
+        const options = Object.entries(settings.labels).map(([id, label]) => ({
+            title: label,
+            value: id
+        }));
+
+        console.log(`✅ [SUCCESS]: Found ${options.length} labels.`);
+        return res.status(200).json(options);
+
     } catch (err) {
-        console.error("❌ [ERROR]:", err.message);
-        res.status(200).send({}); 
+        console.error("❌ [LABEL ERROR]:", err.message);
+        return res.status(200).json([]); 
     }
 });
 
-const PORT = process.env.PORT || 10000;
-app.listen(PORT, '0.0.0.0', () => console.log(`🚀 Server listening on port ${PORT}`));
+// --- 4. STATIC DROPDOWN OPTIONS ---
