@@ -5,81 +5,73 @@ const app = express();
 
 app.use(bodyParser.json());
 
-// --- 🕵️ LOGGING ---
-app.use((req, res, next) => {
-    console.log(`📡 [LOG]: ${req.method} request to: ${req.url}`);
-    next();
-});
-
-// --- 1. THE COMBINED HANDLER (Put this in your one and only URL box) ---
-// Use this path: /get-status-field-defs
-app.all('/get-status-field-defs', async (req, res) => {
+// --- 🛠️ THE UNIVERSAL STATUS HANDLER ---
+// Use this for BOTH "Field Definitions" and "Remote Options"
+app.all('/status-logic', async (req, res) => {
     const payload = req.body.payload || req.body;
+    
+    // Check for incoming board/column data from the recipe
+    const { boardId, columnId } = payload.inputFields || payload;
 
-    // IF Monday sends inputFields, it is asking for the dropdown labels
-    if (payload.inputFields && payload.inputFields.boardId) {
+    if (boardId && columnId) {
         try {
-            const { boardId, columnId } = payload.inputFields;
-            console.log(`🔍 [FETCHING]: Getting labels for Board ${boardId}, Column ${columnId}`);
-
+            console.log(`📡 Fetching labels for Board: ${boardId}, Column: ${columnId}`);
+            
+            // Querying the board to get the specific column settings
             const query = `query { boards (ids: ${boardId}) { columns (ids: "${columnId}") { settings_str } } }`;
             const response = await axios.post('https://api.monday.com/v2', { query }, {
-                headers: { 'Authorization': process.env.MONDAY_API_TOKEN, 'API-Version': '2024-01' }
+                headers: { 
+                    'Authorization': process.env.MONDAY_API_TOKEN, 
+                    'API-Version': '2024-01' 
+                }
             });
 
+            // Parsing labels directly from the column settings
             const settings = JSON.parse(response.data.data.boards[0].columns[0].settings_str);
-            
-            // Map labels to Title (Text) and Value (Index/ID)
-            const options = Object.entries(settings.labels).map(([id, label]) => ({
-                title: label,
-                value: id // This is the 'Index' mentioned in your AI convo
+            const options = Object.entries(settings.labels).map(([id, label]) => ({ 
+                title: label, 
+                value: id 
             }));
 
-            console.log(`✅ [SUCCESS]: Found ${options.length} labels.`);
             return res.status(200).json(options);
-        } catch (err) {
-            console.error("❌ Label Error:", err.message);
-            return res.status(200).json([]);
+        } catch (e) { 
+            console.error("❌ API Fetch Error:", e.message);
+            return res.status(200).json([]); 
         }
     }
 
-    // DEFAULT: Handshake (Stops the blue circle)
-    console.log("🟦 [HANDSHAKE]: Sending metadata for columnId");
+    // HANDSHAKE: Tells the Monday UI that this field depends on columnId
+    console.log("🟦 Sending Field Definition Handshake");
     return res.status(200).json({
-        type: "status-column-value",
+        id: "status_value",
+        title: "Status Column Value",
         outboundType: "status-column-value",
-        contextualParameters: { columnId: "columnId" }
+        inboundTypes: ["status-column-value"],
+        contextualParameters: { columnId: "columnId" } // Links to your first field
     });
 });
 
-// --- 2. THE UPDATED ACTION (Using Label Index) ---
+// --- 🚀 THE RECURRING TASK ACTION ---
 app.post('/calculate-task-with-status', async (req, res) => {
     try {
-        console.log("🚀 [ACTION]: Triggered");
         const payload = req.body.payload || req.body;
-        const inputFields = payload.inboundFieldValues || (payload.inPublic && payload.inPublic.inputFields);
-        if (!inputFields) return res.status(200).send({});
+        const inputFields = payload.inboundFieldValues || payload.inputFields;
+        
+        // Extract values using the status_value key
+        const { boardId, columnId, status_value, task_name, assignee_id } = inputFields;
+        const statusIndex = status_value?.value || status_value;
 
-        const { boardId, task_name, assignee_id, columnId, status_value } = inputFields;
-
-        // Determine the label value (Index or Label Text)
-        // status_value will now contain the 'value' (index) from our fetcher
-        const statusLabelValue = status_value?.value || status_value;
-
-        // Date calculation for the recurring task
-        const nth = inputFields.nth_occurence?.value || inputFields.nth_occurence;
-        const day = inputFields.day_of_week?.value || inputFields.day_of_week;
+        // Date Calculation Logic
+        const { nth_occurence, day_of_week } = inputFields;
         const now = new Date();
         let d = new Date(now.getFullYear(), now.getMonth(), 1);
-        while (d.getDay() !== parseInt(day)) d.setDate(d.getDate() + 1);
-        d.setDate(d.getDate() + (parseInt(nth) - 1) * 7);
-        const date = d.toISOString().split('T')[0];
-
-        // Construct column values using the Index/ID method
+        while (d.getDay() !== parseInt(day_of_week?.value || day_of_week)) d.setDate(d.getDate() + 1);
+        d.setDate(d.getDate() + (parseInt(nth_occurence?.value || nth_occurence) - 1) * 7);
+        
         const columnValues = {
-            [process.env.DUE_DATE_COLUMN_ID]: { "date": date },
+            [process.env.DUE_DATE_COLUMN_ID]: { "date": d.toISOString().split('T')[0] },
             "person": { "personsAndTeams": [{ "id": parseInt(assignee_id), "kind": "person" }] },
-            [columnId]: { "index": parseInt(statusLabelValue) } // Using Index for stability
+            [columnId]: { "index": parseInt(statusIndex) } // Setting the status by Index
         };
 
         const query = `mutation { 
@@ -91,19 +83,31 @@ app.post('/calculate-task-with-status', async (req, res) => {
         }`;
 
         await axios.post('https://api.monday.com/v2', { query }, { 
-            headers: { 'Authorization': process.env.MONDAY_API_TOKEN, 'Content-Type': 'application/json', 'API-Version': '2024-01' } 
+            headers: { 
+                'Authorization': process.env.MONDAY_API_TOKEN, 
+                'Content-Type': 'application/json', 
+                'API-Version': '2024-01' 
+            } 
         });
 
-        console.log("✨ Item Created Successfully");
+        console.log("✅ Success: Item created with status.");
         res.status(200).send({});
     } catch (err) {
         console.error("❌ Action Error:", err.message);
-        res.status(200).send({}); 
+        res.status(200).send({});
     }
 });
 
-// Static Options for the rest of the recipe
-app.all('/get-nth-options', (req, res) => res.json([{title:"1st",value:"1"},{title:"2nd",value:"2"},{title:"3rd",value:"3"},{title:"4th",value:"4"}]));
-app.all('/get-day-options', (req, res) => res.json([{title:"Monday",value:"1"},{title:"Tuesday",value:"2"},{title:"Wednesday",value:"3"},{title:"Thursday",value:"4"},{title:"Friday",value:"5"},{title:"Saturday",value:"6"},{title:"Sunday",value:"0"}]));
+// Static Helpers for Nth and Day selections
+app.all('/get-nth-options', (req, res) => res.json([
+    {title:"1st",value:"1"},{title:"2nd",value:"2"},{title:"3rd",value:"3"},{title:"4th",value:"4"}
+]));
 
-app.listen(process.env.PORT || 10000, '0.0.0.0');
+app.all('/get-day-options', (req, res) => res.json([
+    {title:"Monday",value:"1"},{title:"Tuesday",value:"2"},{title:"Wednesday",value:"3"},
+    {title:"Thursday",value:"4"},{title:"Friday",value:"5"},{title:"Saturday",value:"6"},{title:"Sunday",value:"0"}
+]));
+
+// Fixed Port for Render
+const PORT = 10000;
+app.listen(PORT, '0.0.0.0', () => console.log(`Server live on port ${PORT}`));
