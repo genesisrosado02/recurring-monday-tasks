@@ -14,7 +14,7 @@ const DUE_DATE_COLUMN_ID = process.env.DUE_DATE_COLUMN_ID;
  * This endpoint is what you put into the "Field Definitions URL" in your screenshot.
  * It tells monday.com to link 'status_value' to the board's 'columnID'.
  */
-app.post('/monday/get-status-field-defs', (req, res) => {
+app.post('/get-status-field-defs', (req, res) => {
     return res.status(200).json({
         type: "status-column-value",
         outboundType: "status-column-value",
