@@ -11,19 +11,9 @@ app.use((req, res, next) => {
     next();
 });
 
-// --- 1. ROOT HANDLER ---
-// Responds if Monday pings your Base URL directly
-app.all('/', (req, res) => {
-    return res.status(200).json({
-        type: "status-column-value",
-        outboundType: "status-column-value",
-        contextualParameters: { columnId: "columnId" }
-    });
-});
-
-// --- 2. FIELD DEFINITION (Handshake) ---
-// This stops the blue circle. Path: /get-status-field-defs
-app.all('/get-status-field-defs', (req, res) => {
+// --- 1. THE "BLUE CIRCLE" KILLER (Handles Root and Handshake) ---
+// We put the same logic in both places so Monday can't miss it.
+const handshakeResponse = (req, res) => {
     console.log("🟦 [HANDSHAKE]: Sending metadata for columnId");
     return res.status(200).json({
         type: "status-column-value",
@@ -32,10 +22,13 @@ app.all('/get-status-field-defs', (req, res) => {
             columnId: "columnId" // Matches your dependency key exactly
         }
     });
-});
+};
 
-// --- 3. REMOTE OPTIONS (Label Fetcher) ---
-// This replaces the "Search" box with your actual labels
+app.all('/', handshakeResponse);
+app.all('/get-status-field-defs', handshakeResponse);
+
+// --- 2. REMOTE OPTIONS (Label Fetcher) ---
+// This fills the dropdown with your board's labels (Done, Stuck, etc.)
 app.post('/get-status-labels', async (req, res) => {
     try {
         const payload = req.body.payload || req.body;
@@ -75,17 +68,16 @@ app.post('/get-status-labels', async (req, res) => {
     }
 });
 
-// --- 4. OTHER DROPDOWNS ---
+// --- 3. STATIC DROPDOWNS ---
 app.all('/get-nth-options', (req, res) => res.json([{ title: "1st", value: "1" }, { title: "2nd", value: "2" }, { title: "3rd", value: "3" }, { title: "4th", value: "4" }]));
 app.all('/get-day-options', (req, res) => res.json([{ title: "Monday", value: "1" }, { title: "Tuesday", value: "2" }, { title: "Wednesday", value: "3" }, { title: "Thursday", value: "4" }, { title: "Friday", value: "5" }, { title: "Saturday", value: "6" }, { title: "Sunday", value: "0" }]));
 
-// --- 5. MAIN ACTION ---
+// --- 4. MAIN ACTION ---
 app.post('/calculate-task-with-status', async (req, res) => {
     try {
-        console.log("🚀 [ACTION]: Processing Task Creation...");
+        console.log("🚀 [ACTION]: Triggered");
         const payload = req.body.payload || req.body;
         const inputFields = payload.inboundFieldValues || (payload.inPublic && payload.inPublic.inputFields);
-        
         if (!inputFields) return res.status(200).send({});
 
         const { boardId, task_name, assignee_id, columnId, status_value } = inputFields;
@@ -108,7 +100,6 @@ app.post('/calculate-task-with-status', async (req, res) => {
         const query = `mutation { create_item (board_id: ${parseInt(boardId)}, item_name: "${task_name}", column_values: ${JSON.stringify(JSON.stringify(columnValues))}) { id } }`;
         await axios.post('https://api.monday.com/v2', { query }, { headers: { 'Authorization': process.env.MONDAY_API_TOKEN, 'Content-Type': 'application/json', 'API-Version': '2024-01' } });
 
-        console.log("✅ Task Created Successfully");
         res.status(200).send({});
     } catch (err) {
         console.error("❌ Action Error:", err.message);
@@ -116,5 +107,4 @@ app.post('/calculate-task-with-status', async (req, res) => {
     }
 });
 
-const PORT = process.env.PORT || 10000;
-app.listen(PORT, '0.0.0.0', () => console.log(`🚀 Server listening on port ${PORT}`));
+app.listen(process.env.PORT || 10000, '0.0.0.0');
