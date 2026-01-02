@@ -5,47 +5,75 @@ const app = express();
 
 app.use(bodyParser.json());
 
+// --- 🔒 ENVIRONMENT VARIABLES ---
 const MONDAY_API_TOKEN = process.env.MONDAY_API_TOKEN; 
 const DUE_DATE_COLUMN_ID = process.env.DUE_DATE_COLUMN_ID; 
 
-// --- 1. FIELD DEFINITION (This kills the blue circle) ---
+// --- 1. HEALTH CHECK (To verify Render is awake) ---
+app.get('/health', (req, res) => {
+    res.status(200).send("Server is live and reachable.");
+});
+
+/**
+ * 2. FIELD DEFINITION (Dynamic Mapping)
+ * This is the handshake that stops the blue circle.
+ * It links your 'status_value' field to the 'columnId' picker.
+ */
 app.post('/get-status-field-defs', (req, res) => {
-    console.log("🟦 [LOG]: Monday is requesting the Status labels metadata.");
+    console.log("🟦 [LOG]: Handshake received. Sending field metadata...");
+    
+    // Returning 200 with the exact expected JSON structure
     return res.status(200).json({
         type: "status-column-value",
         outboundType: "status-column-value",
         contextualParameters: {
-            columnId: "columnId" // MUST match your Status Column Picker key exactly
+            columnId: "columnId" // Matches your screenshot key exactly
         }
     });
 });
 
-// --- 2. DROPDOWN OPTIONS (Nth and Day) ---
+/**
+ * 3. REMOTE OPTIONS
+ * Dropdown choices for the Nth occurrence and Day of the Week.
+ */
 app.all('/get-nth-options', (req, res) => {
-    console.log("🟢 [LOG]: Fetching Nth occurrence options.");
-    res.json([{ title: "1st", value: "1" }, { title: "2nd", value: "2" }, { title: "3rd", value: "3" }, { title: "4th", value: "4" }]);
+    console.log("🟢 [LOG]: Fetching Nth options");
+    res.json([
+        { title: "1st", value: "1" }, { title: "2nd", value: "2" }, 
+        { title: "3rd", value: "3" }, { title: "4th", value: "4" }
+    ]);
 });
 
 app.all('/get-day-options', (req, res) => {
-    console.log("🟢 [LOG]: Fetching Day of week options.");
-    res.json([{ title: "Monday", value: "1" }, { title: "Tuesday", value: "2" }, { title: "Wednesday", value: "3" }, { title: "Thursday", value: "4" }, { title: "Friday", value: "5" }, { title: "Saturday", value: "6" }, { title: "Sunday", value: "0" }]);
+    console.log("🟢 [LOG]: Fetching Day options");
+    res.json([
+        { title: "Monday", value: "1" }, { title: "Tuesday", value: "2" }, 
+        { title: "Wednesday", value: "3" }, { title: "Thursday", value: "4" }, 
+        { title: "Friday", value: "5" }, { title: "Saturday", value: "6" }, { title: "Sunday", value: "0" }
+    ]);
 });
 
-// --- 3. THE ITEM CREATION ACTION ---
+/**
+ * 4. MAIN ACTION: Create Task
+ * Triggered when the automation runs.
+ */
 app.post('/calculate-task-with-status', async (req, res) => {
     try {
-        console.log("🚀 [LOG]: Recipe triggered! Creating task...");
+        console.log("🚀 [LOG]: Action received. Processing payload...");
         const payload = req.body.payload || req.body;
         const inputFields = payload.inboundFieldValues || (payload.inPublic && payload.inPublic.inputFields);
+        
         if (!inputFields) return res.status(200).send({});
 
+        // Keys synced to your screenshots: columnId and status_value
         const { boardId, task_name, assignee_id, columnId, status_value } = inputFields;
-        const labelText = status_value?.label || status_value?.value || status_value;
         
+        // Extract label from dynamic mapping object
+        const labelText = status_value?.label || status_value?.value || status_value;
         const nth = inputFields.nth_occurence?.value || inputFields.nth_occurence;
         const day = inputFields.day_of_week?.value || inputFields.day_of_week;
 
-        // Date logic: 1st [day] of the month
+        // Date Calculation Logic
         const now = new Date();
         let d = new Date(now.getFullYear(), now.getMonth(), 1);
         while (d.getDay() !== parseInt(day)) d.setDate(d.getDate() + 1);
@@ -66,17 +94,26 @@ app.post('/calculate-task-with-status', async (req, res) => {
             ) { id } 
         }`;
 
-        await axios.post('https://api.monday.com/v2', { query }, { 
-            headers: { 'Authorization': MONDAY_API_TOKEN, 'Content-Type': 'application/json', 'API-Version': '2024-01' } 
+        const response = await axios.post('https://api.monday.com/v2', { query }, { 
+            headers: { 
+                'Authorization': MONDAY_API_TOKEN, 
+                'Content-Type': 'application/json', 
+                'API-Version': '2024-01' 
+            } 
         });
 
-        console.log(`✨ [LOG]: Success! Created item with status: ${labelText}`);
+        if (response.data.errors) {
+            console.error("❌ [LOG] Monday API Error:", response.data.errors);
+        } else {
+            console.log(`✨ [LOG] Task Created! Status: ${labelText} in Column: ${columnId}`);
+        }
+
         res.status(200).send({});
     } catch (err) {
-        console.error("❌ [LOG] Error:", err.message);
-        res.status(200).send({}); 
+        console.error("🔥 [LOG] Server Error:", err.message);
+        res.status(200).send({}); // Always return 200 to Monday
     }
 });
 
 const PORT = process.env.PORT || 10000;
-app.listen(PORT, '0.0.0.0', () => console.log(`📡 [LOG]: Server live on port ${PORT}`));
+app.listen(PORT, '0.0.0.0', () => console.log(`📡 Server listening on port ${PORT}`));
