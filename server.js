@@ -6,24 +6,30 @@ const app = express();
 app.use(bodyParser.json());
 
 // --- 🕵️ GLOBAL LOGGER ---
+// This logs EVERY hit to your server. If you don't see logs here, the request isn't reaching Render.
 app.use((req, res, next) => {
     console.log(`📡 [LOG]: ${req.method} request to: ${req.url}`);
     next();
 });
 
-// --- 1. ROOT HANDLER (Fixes the "GET to /" in your logs) ---
+// --- 1. ROOT HANDLER ---
 app.get('/', (req, res) => {
-    res.status(200).send("Render server is LIVE and waiting for Monday.com!");
+    res.status(200).send("Server is LIVE.");
 });
 
-// --- 2. FIELD DEFINITION (Matches image_ddee70.png) ---
-app.post('/get-status-field-defs', (req, res) => {
-    console.log("🟦 [HANDSHAKE]: Monday requested metadata for 'columnId'");
+/**
+ * 2. FIELD DEFINITION (The "Blue Circle" Killer)
+ * Changed to app.all to handle any request method Monday sends.
+ * Path: /get-status-field-defs (Must match image_ddebc9.png exactly).
+ */
+app.all('/get-status-field-defs', (req, res) => {
+    console.log("🟦 [HANDSHAKE]: Monday requested Status metadata for key: columnId");
     return res.status(200).json({
         type: "status-column-value",
         outboundType: "status-column-value",
         contextualParameters: {
-            columnId: "columnId" // This MUST match your screenshot exactly
+            // Lowercase 'd' matches image_ddee70.png exactly
+            columnId: "columnId" 
         }
     });
 });
@@ -40,7 +46,7 @@ app.all('/get-day-options', (req, res) => {
 // --- 4. MAIN ACTION HANDLER ---
 app.post('/calculate-task-with-status', async (req, res) => {
     try {
-        console.log("🚀 [ACTION]: Triggered!");
+        console.log("🚀 [ACTION]: Triggered by Monday automation.");
         const payload = req.body.payload || req.body;
         const inputFields = payload.inboundFieldValues || (payload.inPublic && payload.inPublic.inputFields);
         
@@ -67,13 +73,17 @@ app.post('/calculate-task-with-status', async (req, res) => {
         const query = `mutation { create_item (board_id: ${parseInt(boardId)}, item_name: "${task_name}", column_values: ${JSON.stringify(JSON.stringify(columnValues))}) { id } }`;
         
         await axios.post('https://api.monday.com/v2', { query }, { 
-            headers: { 'Authorization': process.env.MONDAY_API_TOKEN, 'Content-Type': 'application/json', 'API-Version': '2024-01' } 
+            headers: { 
+                'Authorization': process.env.MONDAY_API_TOKEN, 
+                'Content-Type': 'application/json', 
+                'API-Version': '2024-01' 
+            } 
         });
 
-        console.log("✨ Success: Item created.");
+        console.log("✨ [SUCCESS]: Item created on board.");
         res.status(200).send({});
     } catch (err) {
-        console.error("❌ Action Error:", err.message);
+        console.error("❌ [ERROR]:", err.message);
         res.status(200).send({}); 
     }
 });
