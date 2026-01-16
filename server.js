@@ -11,8 +11,11 @@ app.post('/calculate-task-with-status', async (req, res) => {
         const payload = req.body.payload || req.body;
         const inputFields = payload.inboundFieldValues || payload.inputFields;
         
-        // Destructuring the new text-based key
+        // Destructuring the keys
         const { boardId, columnId, status_label_text, task_name, assignee_id } = inputFields;
+
+        // Safety check: remove accidental spaces from the beginning or end of the text
+        const cleanStatusLabel = status_label_text ? status_label_text.trim() : "";
 
         // Recurring Date Logic
         const nth = inputFields.nth_occurence?.value || inputFields.nth_occurence;
@@ -23,11 +26,10 @@ app.post('/calculate-task-with-status', async (req, res) => {
         d.setDate(d.getDate() + (parseInt(nth) - 1) * 7);
 
         // CREATE ITEM using the Label method
-        // columnId is the key, and we pass the text inside {"label": "TEXT"}
         const columnValues = {
             [process.env.DUE_DATE_COLUMN_ID]: { "date": d.toISOString().split('T')[0] },
             "person": { "personsAndTeams": [{ "id": parseInt(assignee_id), "kind": "person" }] },
-            [columnId]: { "label": status_label_text } 
+            [columnId]: { "label": cleanStatusLabel } 
         };
 
         const query = `mutation { 
@@ -46,7 +48,7 @@ app.post('/calculate-task-with-status', async (req, res) => {
             } 
         });
 
-        console.log(`✅ Item created with status label: ${status_label_text}`);
+        console.log(`✅ Item created: "${task_name}" with status: "${cleanStatusLabel}"`);
         res.status(200).send({});
     } catch (err) {
         console.error("❌ Action failed:", err.message);
