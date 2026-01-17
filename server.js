@@ -5,16 +5,20 @@ const app = express();
 
 app.use(bodyParser.json());
 
+// --- 🌐 ROOT HANDSHAKE ---
+// This stops the "Oops" error by giving Monday a valid response at the base URL
+app.get('/', (req, res) => {
+    console.log("🟦 Root health check received");
+    res.status(200).send("Server is live!");
+});
+
 // --- 🚀 THE CREATE ITEM ACTION ---
 app.post('/calculate-task-with-status', async (req, res) => {
     try {
         const payload = req.body.payload || req.body;
         const inputFields = payload.inboundFieldValues || payload.inputFields;
         
-        // Destructuring the keys
         const { boardId, columnId, status_label_text, task_name, assignee_id } = inputFields;
-
-        // Safety check: remove accidental spaces from the beginning or end of the text
         const cleanStatusLabel = status_label_text ? status_label_text.trim() : "";
 
         // Recurring Date Logic
@@ -25,7 +29,6 @@ app.post('/calculate-task-with-status', async (req, res) => {
         while (d.getDay() !== parseInt(day)) d.setDate(d.getDate() + 1);
         d.setDate(d.getDate() + (parseInt(nth) - 1) * 7);
 
-        // CREATE ITEM using the Label method
         const columnValues = {
             [process.env.DUE_DATE_COLUMN_ID]: { "date": d.toISOString().split('T')[0] },
             "person": { "personsAndTeams": [{ "id": parseInt(assignee_id), "kind": "person" }] },
@@ -48,7 +51,7 @@ app.post('/calculate-task-with-status', async (req, res) => {
             } 
         });
 
-        console.log(`✅ Item created: "${task_name}" with status: "${cleanStatusLabel}"`);
+        console.log(`✅ Success: ${task_name} created.`);
         res.status(200).send({});
     } catch (err) {
         console.error("❌ Action failed:", err.message);
@@ -56,9 +59,18 @@ app.post('/calculate-task-with-status', async (req, res) => {
     }
 });
 
-// Dropdown Helpers for recurring logic
-app.all('/get-nth-options', (req, res) => res.json([{title:"1st",value:"1"},{title:"2nd",value:"2"},{title:"3rd",value:"3"},{title:"4th",value:"4"}]));
-app.all('/get-day-options', (req, res) => res.json([{title:"Monday",value:"1"},{title:"Tuesday",value:"2"},{title:"Wednesday",value:"3"},{title:"Thursday",value:"4"},{title:"Friday",value:"5"},{title:"Saturday",value:"6"},{title:"Sunday",value:"0"}]));
+// --- 📅 DROPDOWN ENDPOINTS ---
+// Ensure these URLs match exactly in your Developer Center
+app.all('/get-nth-options', (req, res) => {
+    res.json([{title:"1st",value:"1"},{title:"2nd",value:"2"},{title:"3rd",value:"3"},{title:"4th",value:"4"}]);
+});
+
+app.all('/get-day-options', (req, res) => {
+    res.json([
+        {title:"Monday",value:"1"},{title:"Tuesday",value:"2"},{title:"Wednesday",value:"3"},
+        {title:"Thursday",value:"4"},{title:"Friday",value:"5"},{title:"Saturday",value:"6"},{title:"Sunday",value:"0"}
+    ]);
+});
 
 const PORT = 10000;
 app.listen(PORT, '0.0.0.0', () => console.log(`Server live on ${PORT}`));
