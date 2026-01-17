@@ -15,10 +15,9 @@ app.post('/calculate-task-with-tag', async (req, res) => {
         const payload = req.body.payload || req.body;
         const inputFields = payload.inboundFieldValues || payload.inputFields;
         
-        // Match keys to Developer Center
         const { boardId, groupId, tagsColumn, tag_names, task_name } = inputFields;
 
-        // 1. Date Calculation (Create on 1st, Due on Nth)
+        // 1. Date Calculation
         const nth = inputFields.nth_occurence?.value || inputFields.nth_occurence;
         const day = inputFields.day_of_week?.value || inputFields.day_of_week;
         const now = new Date();
@@ -27,10 +26,11 @@ app.post('/calculate-task-with-tag', async (req, res) => {
         d.setDate(d.getDate() + (parseInt(nth) - 1) * 7);
         const dueDate = d.toISOString().split('T')[0];
 
-        // 2. Format Tags using 'tag_labels' to support new tag creation
+        // 2. The Universal Tag Structure
+        // We send it as a string of labels. This is the most compatible way.
         const columnValues = {
             [process.env.DUE_DATE_COLUMN_ID]: { "date": dueDate },
-            [tagsColumn]: { "tag_labels": [tag_names] } 
+            [tagsColumn]: tag_names 
         };
 
         const query = `mutation { 
@@ -53,7 +53,7 @@ app.post('/calculate-task-with-tag', async (req, res) => {
         if (response.data.errors) {
             console.error("❌ Monday API Error:", JSON.stringify(response.data.errors, null, 2));
         } else {
-            console.log(`✅ Success! Task Created: ${task_name}. Due: ${dueDate}. Tag: ${tag_names}`);
+            console.log(`✅ Success! Task: "${task_name}" created. Due: ${dueDate}. Tag applied: ${tag_names}`);
         }
         res.status(200).send({});
     } catch (err) {
