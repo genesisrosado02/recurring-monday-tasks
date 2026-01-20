@@ -40,26 +40,64 @@ app.post('/calculate-task-with-tag', async (req, res) => {
         const payload = req.body.payload || req.body;
         const inputFields = payload.inboundFieldValues || payload.inputFields;
         
-        // Destructure keys exactly as they appear in your Developer Center
-        // 'name' matches your recent update to the Task Name field key
+        // Match 'name' to your updated Developer Center Key
         const { boardId, groupId, tagsColumn, tag_names, name } = inputFields;
 
-        // 1. DATE CALCULATION (Due on the Nth X-day of the current month)
+        // 1. DATE CALCULATION
         const nth = inputFields.nth_occurence?.value || inputFields.nth_occurence;
         const day = inputFields.day_of_week?.value || inputFields.day_of_week;
         
         const now = new Date();
         let d = new Date(now.getFullYear(), now.getMonth(), 1);
         
-        // Find the first occurrence of the selected day
         while (d.getDay() !== parseInt(day)) {
             d.setDate(d.getDate() + 1);
         }
         
-        // Add weeks to get to the Nth occurrence
         d.setDate(d.getDate() + (parseInt(nth) - 1) * 7);
         const dueDate = d.toISOString().split('T')[0];
 
-        // 2. COLUMN VALUES STRUCTURE
-        // For 'tag' columns, Monday requires an object: { "tag_labels": ["Name"] }
-        // Sending just a string causes the "ColumnValueException"
+        // 2. THE 2025 COMPLIANT TAG STRUCTURE
+        // This resolves the "invalid value" error by providing the required 'tag_labels' object
+        const columnValues = {
+            [process.env.DUE_DATE_COLUMN_ID]: { "date": dueDate },
+            [tagsColumn]: { "tag_labels": [tag_names] } 
+        };
+
+        // 3. GRAPHQL MUTATION
+        const query = `mutation { 
+            create_item (
+                board_id: ${parseInt(boardId)}, 
+                group_id: "${groupId}", 
+                item_name: "${name}", 
+                column_values: ${JSON.stringify(JSON.stringify(columnValues))}
+            ) { id } 
+        }`;
+
+        const response = await axios.post('https://api.monday.com/v2', { query }, { 
+            headers: { 
+                'Authorization': process.env.MONDAY_API_TOKEN, 
+                'Content-Type': 'application/json',
+                'API-Version': '2024-01' 
+            } 
+        });
+
+        if (response.data.errors) {
+            console.error("❌ Monday API Error Details:", JSON.stringify(response.data.errors, null, 2));
+        } else {
+            console.log(`✅ Success! Task: "${name}" created. Due: ${dueDate}. Tag: ${tag_names}`);
+        }
+
+        res.status(200).send({});
+
+    } catch (err) {
+        console.error("❌ Server Error:", err.message);
+        res.status(200).send({});
+    }
+});
+
+// Start the server
+const PORT = process.env.PORT || 10000;
+app.listen(PORT, '0.0.0.0', () => {
+    console.log(`🚀 Server live on port ${PORT}`);
+});
