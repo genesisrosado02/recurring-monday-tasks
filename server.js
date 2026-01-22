@@ -4,7 +4,12 @@ const axios = require('axios');
 const app = express();
 app.use(bodyParser.json());
 
-app.get('/', (req, res) => res.status(200).send("Server is live."));
+// --- MONDAY HANDSHAKE ENDPOINT ---
+// This handles the Subscribe/Unsubscribe URLs by just saying "OK"
+app.all('/', (req, res) => {
+    console.log("Monday Handshake Received");
+    res.status(200).send({}); 
+});
 
 const monthNames = ["January", "February", "March", "April", "May", "June", "July", "August", "September", "October", "November", "December"];
 
@@ -24,9 +29,9 @@ app.post('/calculate-task-on-nth-day', async (req, res) => {
         d.setDate(d.getDate() + (parseInt(fields.nth_occurence?.value || fields.nth_occurence) - 1) * 7);
         
         const columnValues = {
-            [fields.date_column || process.env.DUE_DATE_COLUMN_ID]: { "date": d.toISOString().split('T')[0] },
+            [fields.date_column]: { "date": d.toISOString().split('T')[0] },
             [fields.client_column]: { "label": fields.client_name_value },
-            [fields.month_column || process.env.MONTH_STATUS_COLUMN_ID]: { "label": monthNames[d.getMonth()] }
+            [fields.month_column]: { "label": monthNames[d.getMonth()] }
         };
 
         const query = `mutation { create_item (
@@ -50,14 +55,12 @@ app.post('/set-deadline', async (req, res) => {
         const payload = req.body.payload || req.body;
         const fields = payload.inboundFieldValues || payload.inputFields || {};
 
-        // FALLBACK LOGIC: Check manual fields first, then background event
-        const boardId = fields.boardId || payload.event?.boardId;
-        const itemId = fields.itemId || payload.event?.pulseId || payload.event?.itemId;
-
-        console.log(`Update Request - Board: ${boardId}, Item: ${itemId}`);
+        // REDUNDANT ID GRABBING
+        const boardId = fields.boardId || payload.event?.boardId || payload.boardId;
+        const itemId = fields.itemId || fields.pulseId || payload.event?.pulseId || payload.pulseId;
 
         if (!boardId || !itemId) {
-            console.log("Full Debug Payload:", JSON.stringify(payload));
+            console.log("Critical Failure - Full Payload:", JSON.stringify(payload));
             throw new Error(`Missing IDs - Board: ${boardId}, Item: ${itemId}`);
         }
 
@@ -65,8 +68,8 @@ app.post('/set-deadline', async (req, res) => {
         const lastDay = new Date(now.getFullYear(), now.getMonth() + 1, 0);
         
         const columnValues = {
-            [fields.date_column || process.env.DUE_DATE_COLUMN_ID]: { "date": lastDay.toISOString().split('T')[0] },
-            [fields.month_column || process.env.MONTH_STATUS_COLUMN_ID]: { "label": monthNames[now.getMonth()] }
+            [fields.date_column]: { "date": lastDay.toISOString().split('T')[0] },
+            [fields.month_column]: { "label": monthNames[now.getMonth()] }
         };
 
         const query = `mutation { change_multiple_column_values (
