@@ -4,12 +4,8 @@ const axios = require('axios');
 const app = express();
 app.use(bodyParser.json());
 
-// --- MONDAY HANDSHAKE ENDPOINT ---
-// This handles the Subscribe/Unsubscribe URLs by just saying "OK"
-app.all('/', (req, res) => {
-    console.log("Monday Handshake Received");
-    res.status(200).send({}); 
-});
+// Root endpoint just to check if server is up
+app.get('/', (req, res) => res.status(200).send("Server is live."));
 
 const monthNames = ["January", "February", "March", "April", "May", "June", "July", "August", "September", "October", "November", "December"];
 
@@ -55,12 +51,14 @@ app.post('/set-deadline', async (req, res) => {
         const payload = req.body.payload || req.body;
         const fields = payload.inboundFieldValues || payload.inputFields || {};
 
-        // REDUNDANT ID GRABBING
-        const boardId = fields.boardId || payload.event?.boardId || payload.boardId;
-        const itemId = fields.itemId || fields.pulseId || payload.event?.pulseId || payload.pulseId;
+        // With the mapping you just set up, itemId will be right here in 'fields'
+        const boardId = fields.boardId;
+        const itemId = fields.itemId;
+
+        console.log(`Update Request - Board: ${boardId}, Item: ${itemId}`);
 
         if (!boardId || !itemId) {
-            console.log("Critical Failure - Full Payload:", JSON.stringify(payload));
+            console.log("Full Payload for Debug:", JSON.stringify(payload));
             throw new Error(`Missing IDs - Board: ${boardId}, Item: ${itemId}`);
         }
 
@@ -83,7 +81,7 @@ app.post('/set-deadline', async (req, res) => {
             headers: { 'Authorization': process.env.MONDAY_API_TOKEN, 'API-Version': '2024-01' } 
         });
 
-        console.log(`Successfully updated item ${itemId}`);
+        console.log(`✅ Successfully updated item ${itemId}`);
         res.status(200).send({});
     } catch (err) { 
         console.error("Deadline Error:", err.message); 
