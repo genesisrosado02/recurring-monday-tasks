@@ -46,12 +46,14 @@ app.post('/set-deadline', async (req, res) => {
         const payload = req.body.payload || req.body;
         const fields = payload.inboundFieldValues || payload.inputFields || {};
 
-        // Robust ID grabbing: Checks trigger event OR manual input fields
-        const boardId = fields.boardId || payload.event?.boardId;
-        const itemId = payload.event?.pulseId || payload.event?.itemId;
+        // Explicitly pulling from the new mapped fields
+        const boardId = fields.boardId;
+        const itemId = fields.itemId;
+
+        console.log(`Received Request - Board: ${boardId}, Item: ${itemId}`);
 
         if (!boardId || !itemId) {
-            throw new Error(`Missing IDs - Board: ${boardId}, Item: ${itemId}`);
+            throw new Error(`Still missing IDs - Board: ${boardId}, Item: ${itemId}`);
         }
 
         const now = new Date();
@@ -70,10 +72,10 @@ app.post('/set-deadline', async (req, res) => {
         ) { id } }`;
 
         await axios.post('https://api.monday.com/v2', { query }, { 
-            headers: { 'Authorization': process.env.MONDAY_API_TOKEN, 'API-Version': '2024-01' } 
+            headers: { 'Authorization': process.env.MONDAY_API_TOKEN, 'Content-Type': 'application/json', 'API-Version': '2024-01' } 
         });
 
-        console.log(`Successfully updated item ${itemId} on board ${boardId}`);
+        console.log(`Successfully updated item ${itemId}`);
         res.status(200).send({});
     } catch (err) { 
         console.error("Error setting month-end:", err.message); 
