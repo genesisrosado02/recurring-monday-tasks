@@ -8,11 +8,15 @@ app.get('/', (req, res) => res.status(200).send("Server is live."));
 
 const monthNames = ["January", "February", "March", "April", "May", "June", "July", "August", "September", "October", "November", "December"];
 
-// --- ACTION 1: Nth Day (Create Item) ---
+// --- OPTION ENDPOINTS ---
+app.all('/get-nth-options', (req, res) => res.json([{title:"1st",value:"1"},{title:"2nd",value:"2"},{title:"3rd",value:"3"},{title:"4th",value:"4"}]));
+app.all('/get-day-options', (req, res) => res.json([{title:"Monday",value:"1"},{title:"Tuesday",value:"2"},{title:"Wednesday",value:"3"},{title:"Thursday",value:"4"},{title:"Friday",value:"5"},{title:"Saturday",value:"6"},{title:"Sunday",value:"0"}]));
+
+// --- ACTION 1: Nth Day (Create New Item) ---
 app.post('/calculate-task-on-nth-day', async (req, res) => {
     try {
         const payload = req.body.payload || req.body;
-        const fields = payload.inboundFieldValues || payload.inputFields;
+        const fields = payload.inboundFieldValues || payload.inputFields || {};
         
         const now = new Date();
         let d = new Date(now.getFullYear(), now.getMonth(), 1);
@@ -20,9 +24,9 @@ app.post('/calculate-task-on-nth-day', async (req, res) => {
         d.setDate(d.getDate() + (parseInt(fields.nth_occurence?.value || fields.nth_occurence) - 1) * 7);
         
         const columnValues = {
-            [process.env.DUE_DATE_COLUMN_ID]: { "date": d.toISOString().split('T')[0] },
+            [fields.date_column || process.env.DUE_DATE_COLUMN_ID]: { "date": d.toISOString().split('T')[0] },
             [fields.client_column]: { "label": fields.client_name_value },
-            [process.env.MONTH_STATUS_COLUMN_ID]: { "label": monthNames[d.getMonth()] }
+            [fields.month_column || process.env.MONTH_STATUS_COLUMN_ID]: { "label": monthNames[d.getMonth()] }
         };
 
         const query = `mutation { create_item (
@@ -40,28 +44,29 @@ app.post('/calculate-task-on-nth-day', async (req, res) => {
     } catch (err) { console.error("Nth Day Error:", err.message); res.status(200).send({}); }
 });
 
-// --- ACTION 2: Set Deadline (Update Existing) ---
+// --- ACTION 2: Set Deadline (Update Existing Item) ---
 app.post('/set-deadline', async (req, res) => {
     try {
         const payload = req.body.payload || req.body;
         const fields = payload.inboundFieldValues || payload.inputFields || {};
 
-        // Explicitly pulling from the new mapped fields
-        const boardId = fields.boardId;
-        const itemId = fields.itemId;
+        // FALLBACK LOGIC: Check manual fields first, then background event
+        const boardId = fields.boardId || payload.event?.boardId;
+        const itemId = fields.itemId || payload.event?.pulseId || payload.event?.itemId;
 
-        console.log(`Received Request - Board: ${boardId}, Item: ${itemId}`);
+        console.log(`Update Request - Board: ${boardId}, Item: ${itemId}`);
 
         if (!boardId || !itemId) {
-            throw new Error(`Still missing IDs - Board: ${boardId}, Item: ${itemId}`);
+            console.log("Full Debug Payload:", JSON.stringify(payload));
+            throw new Error(`Missing IDs - Board: ${boardId}, Item: ${itemId}`);
         }
 
         const now = new Date();
         const lastDay = new Date(now.getFullYear(), now.getMonth() + 1, 0);
         
         const columnValues = {
-            [process.env.DUE_DATE_COLUMN_ID]: { "date": lastDay.toISOString().split('T')[0] },
-            [process.env.MONTH_STATUS_COLUMN_ID]: { "label": monthNames[now.getMonth()] }
+            [fields.date_column || process.env.DUE_DATE_COLUMN_ID]: { "date": lastDay.toISOString().split('T')[0] },
+            [fields.month_column || process.env.MONTH_STATUS_COLUMN_ID]: { "label": monthNames[now.getMonth()] }
         };
 
         const query = `mutation { change_multiple_column_values (
@@ -72,13 +77,13 @@ app.post('/set-deadline', async (req, res) => {
         ) { id } }`;
 
         await axios.post('https://api.monday.com/v2', { query }, { 
-            headers: { 'Authorization': process.env.MONDAY_API_TOKEN, 'Content-Type': 'application/json', 'API-Version': '2024-01' } 
+            headers: { 'Authorization': process.env.MONDAY_API_TOKEN, 'API-Version': '2024-01' } 
         });
 
         console.log(`Successfully updated item ${itemId}`);
         res.status(200).send({});
     } catch (err) { 
-        console.error("Error setting month-end:", err.message); 
+        console.error("Deadline Error:", err.message); 
         res.status(200).send({}); 
     }
 });
