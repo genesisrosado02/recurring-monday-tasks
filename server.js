@@ -16,33 +16,56 @@ app.all('/get-day-options', (req, res) => res.json([{title:"Monday",value:"1"},{
 // --- ACTION 1: Nth Day (Using your specific URL) ---
 // This calculates the date and month string for the native "Create Item" block
 app.post('/calculate-task-on-nth-day', async (req, res) => {
+    const startTime = Date.now();
     try {
         const payload = req.body.payload || req.body;
         const fields = payload.inputFields || payload.inboundFieldValues || {};
         
+        // --- LOG SKIMMING BLOCK ---
+        console.log("-----------------------------------------");
+        console.log("🚀 NTH DAY EXECUTION START");
+        console.log("📥 INPUTS RECEIVED:");
+        console.log(`   - nth_occurence: ${fields.nth_occurence?.value || fields.nth_occurence}`);
+        console.log(`   - day_of_week:   ${fields.day_of_week?.value || fields.day_of_week}`);
+        console.log(`   - dateColumnId:  ${fields.dateColumnId}`);
+        console.log("-----------------------------------------");
+
         const now = new Date();
         let d = new Date(now.getFullYear(), now.getMonth(), 1);
         
-        // Using the keys from your screenshot: nth_occurence and day_of_week
         const dayToFind = parseInt(fields.day_of_week?.value || fields.day_of_week);
         const occurrence = parseInt(fields.nth_occurence?.value || fields.nth_occurence);
 
+        if (isNaN(dayToFind) || isNaN(occurrence)) {
+            throw new Error(`Invalid math inputs: Day=${dayToFind}, Occurrence=${occurrence}`);
+        }
+
+        // Logic
         while (d.getDay() !== dayToFind) d.setDate(d.getDate() + 1);
         d.setDate(d.getDate() + (occurrence - 1) * 7);
         
         const calculatedDate = d.toISOString().split('T')[0];
         const currentMonth = monthNames[d.getMonth()];
 
-        // Outputs to be mapped in the native Create Item step
+        // --- OUTPUT SKIMMING BLOCK ---
+        console.log("✅ CALCULATION SUCCESSFUL");
+        console.log(`   - Result Date:  ${calculatedDate}`);
+        console.log(`   - Result Month: ${currentMonth}`);
+        console.log(`   - Duration:     ${Date.now() - startTime}ms`);
+        console.log("-----------------------------------------");
+
         res.status(200).send({
             outputFields: {
-                date: calculatedDate,
-                month_name: currentMonth
+                date: calculatedDate,   // Key must match Dev Center Output Key
+                month_name: currentMonth // Key must match Dev Center Output Key
             }
         });
+
     } catch (err) {
-        console.error("Nth Day Calc Error:", err.message);
-        res.status(200).send({});
+        console.log("❌ EXECUTION FAILED");
+        console.error(`   - Error: ${err.message}`);
+        console.log("-----------------------------------------");
+        res.status(200).send({}); 
     }
 });
 
