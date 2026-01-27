@@ -1,58 +1,81 @@
 const express = require('express');
+const bodyParser = require('body-parser');
 const axios = require('axios');
 const app = express();
 
-app.use(express.json());
+app.use(bodyParser.json());
 
-const monthNames = [
-    "January", "February", "March", "April", "May", "June",
-    "July", "August", "September", "October", "November", "December"
-];
+const monthNames = ["January", "February", "March", "April", "May", "June", "July", "August", "September", "October", "November", "December"];
 
+app.get('/', (req, res) => res.status(200).send("Server is live."));
+
+// --- OPTION ENDPOINTS ---
+app.all('/get-nth-options', (req, res) => res.json([
+    {title:"1st",value:"1"},{title:"2nd",value:"2"},{title:"3rd",value:"3"},{title:"4th",value:"4"}
+]));
+app.all('/get-day-options', (req, res) => res.json([
+    {title:"Monday",value:"1"},{title:"Tuesday",value:"2"},{title:"Wednesday",value:"3"},{title:"Thursday",value:"4"},{title:"Friday",value:"5"},{title:"Saturday",value:"6"},{title:"Sunday",value:"0"}
+]));
+
+// --- ACTION 1: Nth Day Calculation ---
 app.post('/calculate-task-on-nth-day', async (req, res) => {
     try {
         const payload = req.body.payload || req.body;
-        const fields = payload.inputFields || {};
-
-        // 1. Get IDs passed from the UI
-        const boardId = fields.boardId;
-        const itemId = fields.itemId; // This comes from 'Trigger Output'
+        const fields = payload.inputFields || payload.inboundFieldValues || {};
         
-        // 2. Logic Inputs
-        const dayToFind = parseInt(fields.day_of_week?.value || fields.day_of_week);
-        const occurrence = parseInt(fields.nth_occurence?.value || fields.nth_occurence);
-        
-        // 3. Column IDs
-        const dateColumn = fields.dateColumnId;
-        const statusColumn = fields.statusColumnId;
-
-        if (!itemId || !boardId) {
-            console.error("Missing IDs: Item and Board are required.");
-            return res.status(200).send({}); 
-        }
-
-        // 4. Calculation Logic
         const now = new Date();
         let d = new Date(now.getFullYear(), now.getMonth(), 1);
         
-        // Find first occurrence
-        while (d.getDay() !== dayToFind) {
-            d.setDate(d.getDate() + 1);
+        // Match keys to Dev Center
+        const dayToFind = parseInt(fields.day_of_week?.value || fields.day_of_week);
+        const occurrence = parseInt(fields.nth_occurence?.value || fields.nth_occurence);
+
+        if (isNaN(dayToFind) || isNaN(occurrence)) {
+            throw new Error(`Invalid inputs: Day=${dayToFind}, Occur=${occurrence}`);
         }
-        // Add weeks for Nth occurrence
+
+        while (d.getDay() !== dayToFind) d.setDate(d.getDate() + 1);
         d.setDate(d.getDate() + (occurrence - 1) * 7);
         
         const calculatedDate = d.toISOString().split('T')[0];
-        const currentMonthName = monthNames[now.getMonth()];
+        const currentMonth = monthNames[now.getMonth()];
 
-        // 5. Prepare Payload for API 2025-04
-        // Note: Using the 'label' key ensures the Status column matches by name
+        // Sending outputs for the recipe
+        res.status(200).send({
+            outputFields: {
+                date: calculatedDate,   
+                month_name: currentMonth 
+            }
+        });
+
+    } catch (err) {
+        console.error("Nth Day Error:", err.message);
+        res.status(200).send({}); 
+    }
+});
+
+// --- ACTION 2: Set Deadline (2025-04 API Unified) ---
+app.post('/set-deadline', async (req, res) => {
+    try {
+        const payload = req.body.payload || req.body;
+        const fields = payload.inputFields || payload.inboundFieldValues || {};
+
+        // Cast IDs to strings for strict API compliance
+        const boardId = String(fields.boardId || payload.event?.boardId);
+        const itemId = String(fields.itemId || payload.event?.pulseId);
+
+        if (!boardId || !itemId || itemId === "undefined") throw new Error("Missing Board or Item ID");
+
+        const now = new Date();
+        const lastDay = new Date(now.getFullYear(), now.getMonth() + 1, 0);
+        
+        // Define Column Values using your specific Dev Center keys
         const columnValues = {
-            [dateColumn]: { "date": calculatedDate },
-            [statusColumn]: { "label": currentMonthName }
+            [fields.dateColumnId]: { "date": lastDay.toISOString().split('T')[0] },
+            [fields.statusColumnId]: { "label": monthNames[now.getMonth()] }
         };
 
-        // 6. Strict GraphQL Variable Format (Required for 2025-04)
+        // API 2025-04 Strict Mutation Format
         const query = `mutation ($board: ID!, $item: ID!, $values: JSON!) { 
             change_multiple_column_values (
                 board_id: $board, 
@@ -72,19 +95,21 @@ app.post('/calculate-task-on-nth-day', async (req, res) => {
             { query, variables }, 
             { headers: { 
                 'Authorization': process.env.MONDAY_API_TOKEN, 
-                'API-Version': '2025-04' 
+                'API-Version': '2025-04',
+                'Content-Type': 'application/json'
             }}
         );
 
         if (response.data.errors) {
-            console.error("GraphQL Errors:", JSON.stringify(response.data.errors));
+            console.error("GraphQL Errors:", JSON.stringify(response.data.errors, null, 2));
         }
 
         res.status(200).send({});
-    } catch (err) {
-        console.error("Critical Error:", err.response?.data || err.message);
+    } catch (err) { 
+        console.error("Deadline Error:", err.message); 
         res.status(200).send({}); 
     }
 });
 
-app.listen(process.env.PORT || 3000);
+const PORT = process.env.PORT || 10000;
+app.listen(PORT, '0.0.0.0', () => console.log(`🚀 Server live on port ${PORT}`));
